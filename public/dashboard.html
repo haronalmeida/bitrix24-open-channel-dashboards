@@ -1,0 +1,1089 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard de Atendimento — Bitrix24</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    /* ── Reset & Base ──────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f172a;
+      --surface: #1e293b;
+      --surface2: #273549;
+      --border: #334155;
+      --text: #f1f5f9;
+      --text2: #94a3b8;
+      --text3: #64748b;
+      --accent: #6366f1;
+      --accent2: #818cf8;
+      --green: #22c55e;
+      --yellow: #f59e0b;
+      --red: #ef4444;
+      --cyan: #06b6d4;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      font-size: 14px;
+    }
+
+    /* ── Header ────────────────────────────────────────────────── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .header-left { display: flex; align-items: center; gap: 12px; }
+    .logo { font-size: 20px; }
+    .header-title { font-size: 16px; font-weight: 700; color: var(--text); }
+    .header-sub { font-size: 12px; color: var(--text3); margin-top: 1px; }
+    .header-right { display: flex; align-items: center; gap: 10px; }
+
+    /* ── Botões ────────────────────────────────────────────────── */
+    .btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #4f46e5; }
+    .btn-ghost { background: var(--surface2); color: var(--text2); }
+    .btn-ghost:hover:not(:disabled) { background: var(--border); }
+
+    /* ── Spinner ───────────────────────────────────────────────── */
+    .spinner {
+      width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: none;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Filtros ───────────────────────────────────────────────── */
+    .filters {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex;
+      align-items: flex-end;
+      gap: 14px;
+      flex-wrap: wrap;
+    }
+    .filter-group { display: flex; flex-direction: column; gap: 5px; }
+    .filter-group label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+    .filter-group input,
+    .filter-group select {
+      padding: 8px 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 13px;
+      outline: none;
+      min-width: 160px;
+    }
+    .filter-group input:focus,
+    .filter-group select:focus { border-color: var(--accent); }
+
+    /* Auto-refresh badge */
+    .refresh-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text3);
+      margin-left: auto;
+    }
+    .dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+      animation: pulse 2s infinite;
+    }
+    .dot.paused { background: var(--text3); animation: none; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    /* ── Main layout ───────────────────────────────────────────── */
+    main { padding: 24px; max-width: 1400px; margin: 0 auto; }
+
+    /* ── Toast ─────────────────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 24px; right: 24px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 12px 18px;
+      border-radius: 10px;
+      font-size: 13px;
+      display: none;
+      z-index: 999;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+    #toast.show { display: block; animation: fadeIn 0.2s; }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+
+    /* ── Error banner ──────────────────────────────────────────── */
+    #error-banner {
+      background: #7f1d1d;
+      color: #fca5a5;
+      padding: 12px 20px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+      font-size: 13px;
+      display: none;
+    }
+
+    /* ── Cards de KPI ──────────────────────────────────────────── */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .kpi-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+    }
+    .kpi-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: var(--card-accent, var(--accent));
+      border-radius: 3px 3px 0 0;
+    }
+    .kpi-icon { font-size: 22px; margin-bottom: 12px; }
+    .kpi-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; margin-bottom: 8px; }
+    .kpi-value { font-size: 26px; font-weight: 700; color: var(--text); line-height: 1; margin-bottom: 6px; }
+    .kpi-sub { font-size: 12px; color: var(--text3); }
+    .kpi-sessions { font-size: 11px; color: var(--text3); margin-top: 10px; display: flex; gap: 10px; }
+    .badge-sm { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+    .badge-green { background: #14532d; color: #4ade80; }
+    .badge-yellow { background: #451a03; color: #fbbf24; }
+
+    /* ── Seção de gráficos ─────────────────────────────────────── */
+    .charts-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    @media (max-width: 900px) { .charts-grid { grid-template-columns: 1fr; } }
+
+    .chart-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+    }
+    .chart-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text2);
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .chart-wrap { position: relative; height: 220px; }
+
+    /* ── Tabela ────────────────────────────────────────────────── */
+    .table-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 24px;
+    }
+    .table-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .table-title { font-size: 14px; font-weight: 600; }
+    .table-count { font-size: 12px; color: var(--text3); }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      padding: 11px 16px;
+      text-align: left;
+      font-size: 11px;
+      color: var(--text3);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    tbody td {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--surface2);
+      font-size: 13px;
+      color: var(--text2);
+      vertical-align: middle;
+    }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover td { background: var(--surface2); }
+
+    .status-badge {
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .status-open { background: #1e3a5f; color: #60a5fa; }
+    .status-closed { background: #14532d; color: #4ade80; }
+
+    .metric-cell { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 12px; }
+    .metric-good { color: var(--green); }
+    .metric-warn { color: var(--yellow); }
+    .metric-bad { color: var(--red); }
+    .metric-na { color: var(--text3); }
+
+    /* ── Loading overlay ───────────────────────────────────────── */
+    #loading {
+      position: fixed;
+      inset: 0;
+      background: rgba(15,23,42,0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 200;
+      flex-direction: column;
+      gap: 16px;
+      display: none;
+    }
+    #loading.show { display: flex; }
+    .loading-spinner {
+      width: 40px; height: 40px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    .loading-text { color: var(--text2); font-size: 14px; }
+
+    /* ── Empty state ───────────────────────────────────────────── */
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text3);
+    }
+    .empty-state-icon { font-size: 40px; margin-bottom: 12px; }
+    .empty-state-title { font-size: 16px; font-weight: 600; color: var(--text2); margin-bottom: 6px; }
+    .empty-state-text { font-size: 13px; }
+
+    /* ── Timestamp ─────────────────────────────────────────────── */
+    .last-updated { font-size: 11px; color: var(--text3); text-align: right; margin-bottom: 16px; }
+  </style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div id="loading">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">Carregando dados...</div>
+</div>
+
+<!-- Modal de Configurações -->
+<div id="modal-settings" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,0.85);z-index:300;align-items:center;justify-content:center">
+  <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:32px;width:100%;max-width:480px;margin:24px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px">
+      <h2 style="font-size:17px;font-weight:700">⚙️ Horário Comercial</h2>
+      <button onclick="closeSettings()" style="background:none;border:none;color:var(--text3);font-size:20px;cursor:pointer">✕</button>
+    </div>
+    <p style="font-size:13px;color:var(--text3);margin-bottom:20px">
+      Mensagens fora do horário comercial terão o tempo de 1ª resposta contado a partir do início do próximo expediente.
+    </p>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px">
+      <div>
+        <label style="display:block;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-bottom:6px">Início do expediente</label>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="number" id="bh-start" min="0" max="23" value="9"
+            style="width:70px;padding:9px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:15px;outline:none;text-align:center">
+          <span style="color:var(--text3);font-size:13px">horas</span>
+        </div>
+      </div>
+      <div>
+        <label style="display:block;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-bottom:6px">Fim do expediente</label>
+        <div style="display:flex;align-items:center;gap:8px">
+          <input type="number" id="bh-end" min="1" max="24" value="18"
+            style="width:70px;padding:9px 12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:15px;outline:none;text-align:center">
+          <span style="color:var(--text3);font-size:13px">horas</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-bottom:24px">
+      <label style="display:block;font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-bottom:10px">Dias de atendimento</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <label id="day-label-0" style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;border:1px solid var(--border);background:var(--surface2);transition:all 0.15s"><input type="checkbox" id="bh-day-0" value="0" style="display:none">Dom</label>
+        <label id="day-label-1" style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;border:1px solid var(--border);background:var(--surface2);transition:all 0.15s"><input type="checkbox" id="bh-day-1" value="1" style="display:none">Seg</label>
+        <label id="day-label-2" style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;border:1px solid var(--border);background:var(--surface2);transition:all 0.15s"><input type="checkbox" id="bh-day-2" value="2" style="display:none">Ter</label>
+        <label id="day-label-3" style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;border:1px solid var(--border);background:var(--surface2);transition:all 0.15s"><input type="checkbox" id="bh-day-3" value="3" style="display:none">Qua</label>
+        <label id="day-label-4" style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;border:1px solid var(--border);background:var(--surface2);transition:all 0.15s"><input type="checkbox" id="bh-day-4" value="4" style="display:none">Qui</label>
+        <label id="day-label-5" style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;border:1px solid var(--border);background:var(--surface2);transition:all 0.15s"><input type="checkbox" id="bh-day-5" value="5" style="display:none">Sex</label>
+        <label id="day-label-6" style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;border:1px solid var(--border);background:var(--surface2);transition:all 0.15s"><input type="checkbox" id="bh-day-6" value="6" style="display:none">Sáb</label>
+      </div>
+    </div>
+
+    <div style="background:var(--surface2);border-radius:8px;padding:12px 16px;margin-bottom:24px;font-size:13px;color:var(--text2)" id="bh-preview">
+      Expediente: carregando...
+    </div>
+
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button onclick="closeSettings()" class="btn btn-ghost">Cancelar</button>
+      <button onclick="saveSettings()" class="btn btn-primary" id="btn-save-settings">Salvar e recalcular</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- Header -->
+<header>
+  <div class="header-left">
+    <span class="logo">📊</span>
+    <div>
+      <div class="header-title">Dashboard de Atendimento</div>
+      <div class="header-sub" id="tenant-name">WhatsApp / Open Channels</div>
+    </div>
+  </div>
+  <div class="header-right">
+    <div class="refresh-status">
+      <div class="dot" id="refresh-dot"></div>
+      <span id="refresh-label">Auto-refresh: 60s</span>
+    </div>
+    <button class="btn btn-ghost" id="btn-settings" title="Configurações de horário comercial">
+      ⚙️ Configurações
+    </button>
+    <button class="btn btn-ghost" id="btn-refresh">
+      <span>↺</span>
+      <span>Atualizar</span>
+      <div class="spinner" id="btn-spinner"></div>
+    </button>
+  </div>
+</header>
+
+<!-- Filtros -->
+<div class="filters">
+  <div class="filter-group">
+    <label>Data inicial</label>
+    <input type="date" id="filter-date-from">
+  </div>
+  <div class="filter-group">
+    <label>Data final</label>
+    <input type="date" id="filter-date-to">
+  </div>
+  <div class="filter-group" style="position:relative;min-width:280px">
+    <label>Operador</label>
+    <div id="operator-dropdown" onclick="toggleOperatorDropdown()"
+      style="min-height:38px;padding:4px 32px 4px 10px;background:var(--bg);border:1px solid var(--border);
+      border-radius:8px;cursor:pointer;display:flex;align-items:center;flex-wrap:wrap;gap:4px;
+      user-select:none;position:relative">
+      <div id="operator-tags" style="display:flex;flex-wrap:wrap;gap:4px;flex:1;align-items:center">
+        <span id="operator-placeholder" style="color:var(--text3);font-size:13px">Todos os operadores</span>
+      </div>
+      <span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:11px;pointer-events:none">▼</span>
+    </div>
+    <div id="operator-list" style="display:none;position:absolute;top:calc(100% + 4px);left:0;min-width:100%;
+      background:var(--surface);border:1px solid var(--border);border-radius:8px;
+      z-index:200;max-height:300px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,0.5)">
+      <div style="padding:8px;border-bottom:1px solid var(--border);display:flex;gap:6px;position:sticky;top:0;background:var(--surface)">
+        <button onclick="selectAllOperators(event)" class="btn btn-ghost" style="flex:1;padding:5px;font-size:12px">Todos</button>
+        <button onclick="clearOperators(event)" class="btn btn-ghost" style="flex:1;padding:5px;font-size:12px">Limpar</button>
+      </div>
+      <div id="operator-checkboxes" style="padding:4px 0"></div>
+    </div>
+  </div>
+  <button class="btn btn-primary" id="btn-apply">Aplicar filtros</button>
+  <button class="btn btn-ghost" id="btn-clear">Limpar</button>
+</div>
+
+<!-- Main -->
+<main>
+  <div id="error-banner"></div>
+  <div class="last-updated" id="last-updated"></div>
+
+  <!-- KPI Cards -->
+  <div class="kpi-grid">
+    <div class="kpi-card" style="--card-accent: #6366f1">
+      <div class="kpi-icon">💬</div>
+      <div class="kpi-label">Total de Atendimentos</div>
+      <div class="kpi-value" id="kpi-total">—</div>
+      <div class="kpi-sessions">
+        <span class="badge-sm badge-green" id="kpi-closed">— fechados</span>
+        <span class="badge-sm badge-yellow" id="kpi-open">— abertos</span>
+      </div>
+    </div>
+    <div class="kpi-card" style="--card-accent: #06b6d4">
+      <div class="kpi-icon">⚡</div>
+      <div class="kpi-label">Tempo de 1ª Resposta</div>
+      <div class="kpi-value" id="kpi-first-response">—</div>
+      <div class="kpi-sub">Média entre todas as conversas</div>
+    </div>
+    <div class="kpi-card" style="--card-accent: #f59e0b">
+      <div class="kpi-icon">🔄</div>
+      <div class="kpi-label">Tempo Médio de Resposta</div>
+      <div class="kpi-value" id="kpi-avg-response">—</div>
+      <div class="kpi-sub">Entre todas as mensagens trocadas</div>
+    </div>
+    <div class="kpi-card" style="--card-accent: #22c55e">
+      <div class="kpi-icon">⏱️</div>
+      <div class="kpi-label">Tempo Médio de Atendimento</div>
+      <div class="kpi-value" id="kpi-avg-total">—</div>
+      <div class="kpi-sub">Do início ao encerramento</div>
+    </div>
+  </div>
+
+  <!-- Gráficos -->
+  <div class="charts-grid">
+    <div class="chart-card">
+      <div class="chart-title">⚡ Tempo de 1ª Resposta por Operador (min)</div>
+      <div class="chart-wrap">
+        <canvas id="chart-first-response"></canvas>
+      </div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">⏱️ Tempo Médio de Atendimento por Operador (min)</div>
+      <div class="chart-wrap">
+        <canvas id="chart-total-time"></canvas>
+      </div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">💬 Atendimentos por Operador</div>
+      <div class="chart-wrap">
+        <canvas id="chart-sessions"></canvas>
+      </div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title">🔄 Tempo Médio de Resposta por Operador (min)</div>
+      <div class="chart-wrap">
+        <canvas id="chart-avg-response"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabela detalhada -->
+  <div class="table-card">
+    <div class="table-header">
+      <div class="table-title">📋 Conversas Detalhadas</div>
+      <div class="table-count" id="table-count"></div>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#ID</th>
+            <th>Cliente</th>
+            <th>Operador</th>
+            <th>Início</th>
+            <th>Encerramento</th>
+            <th>Status</th>
+            <th>Msgs</th>
+            <th>1ª Resposta</th>
+            <th>Tempo Médio Resp.</th>
+            <th>Total Atendimento</th>
+          </tr>
+        </thead>
+        <tbody id="table-body">
+          <tr><td colspan="10"><div class="empty-state">
+            <div class="empty-state-icon">📭</div>
+            <div class="empty-state-title">Aguardando dados</div>
+            <div class="empty-state-text">Selecione os filtros e clique em Aplicar</div>
+          </div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<script>
+// ─── Estado ───────────────────────────────────────────────────────────────────
+let currentDomain = '';
+let autoRefreshTimer = null;
+let refreshCountdown = 6000;
+let charts = {};
+let isLoading = false;
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  detectDomain();
+  setDefaultDates();
+  bindEvents();
+  loadSettings().then(() => {
+    loadOperators();
+    loadData();
+  });
+  startAutoRefresh();
+});
+
+function detectDomain() {
+  // Tenta detectar o domínio via BX24.js (quando rodando no iframe do Bitrix)
+  try {
+    if (window.BX24) {
+      currentDomain = window.location.hostname;
+    } else {
+      // Fallback: usa o parâmetro de query ou o referrer
+      const params = new URLSearchParams(window.location.search);
+      currentDomain = params.get('domain') || document.referrer
+        ? new URL(document.referrer).hostname
+        : window.location.hostname;
+    }
+  } catch {
+    currentDomain = window.location.hostname;
+  }
+
+  // Permite sobrescrever via query string para testes
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('domain')) currentDomain = params.get('domain');
+
+  document.getElementById('tenant-name').textContent = currentDomain || 'Sem domínio detectado';
+}
+
+function setDefaultDates() {
+  const today = new Date();
+  const firstDay = new Date(today);
+  document.getElementById('filter-date-from').value = formatDate(firstDay);
+  document.getElementById('filter-date-to').value = formatDate(today);
+}
+
+function formatDate(d) {
+  return d.toISOString().split('T')[0];
+}
+
+function bindEvents() {
+  document.getElementById('btn-settings').addEventListener('click', openSettings);
+  document.getElementById('btn-refresh').addEventListener('click', () => {
+    refreshData(true);
+  });
+  document.getElementById('btn-apply').addEventListener('click', loadData);
+  document.getElementById('btn-clear').addEventListener('click', () => {
+    setDefaultDates();
+    clearOperators();
+    loadData();
+  });
+}
+
+// ─── Auto-refresh ──────────────────────────────────────────────────────────────
+function startAutoRefresh() {
+  refreshCountdown = 6000;
+  updateRefreshLabel();
+  clearInterval(autoRefreshTimer);
+  autoRefreshTimer = setInterval(() => {
+    refreshCountdown--;
+    updateRefreshLabel();
+    if (refreshCountdown <= 0) {
+      loadData();
+      refreshCountdown = 6000;
+    }
+  }, 1000);
+}
+
+function updateRefreshLabel() {
+  document.getElementById('refresh-label').textContent = `Auto-refresh: ${refreshCountdown}s`;
+}
+
+// ─── API calls ────────────────────────────────────────────────────────────────
+function getFilters() {
+  return {
+    domain: currentDomain,
+    dateFrom: document.getElementById('filter-date-from').value,
+    dateTo: document.getElementById('filter-date-to').value,
+    operatorIds: getSelectedOperatorIds()
+  };
+}
+
+let allOperators = [];
+
+async function loadOperators() {
+  if (!currentDomain) return;
+  try {
+    const res = await fetch(`/api/operators?domain=${encodeURIComponent(currentDomain)}`);
+    const data = await res.json();
+    if (data.success && data.operators) {
+      allOperators = data.operators;
+      renderOperatorCheckboxes();
+    }
+  } catch {}
+}
+
+function renderOperatorCheckboxes() {
+  const container = document.getElementById('operator-checkboxes');
+  container.innerHTML = allOperators.map(op => `
+    <label style="display:flex;align-items:center;gap:10px;padding:8px 14px;cursor:pointer;font-size:13px;color:var(--text2);transition:background 0.1s"
+      onmouseover="this.style.background='var(--surface2)'" onmouseout="this.style.background=''"
+      onclick="event.stopPropagation()">
+      <input type="checkbox" value="${op.id}" onchange="updateOperatorTags()"
+        style="width:15px;height:15px;accent-color:var(--accent);cursor:pointer">
+      ${op.name}
+    </label>
+  `).join('');
+}
+
+function toggleOperatorDropdown() {
+  const list = document.getElementById('operator-list');
+  list.style.display = list.style.display === 'none' ? 'block' : 'none';
+}
+
+function updateOperatorTags() {
+  const checked = getSelectedOperatorIds();
+  const tagsEl = document.getElementById('operator-tags');
+  if (checked.length === 0) {
+    tagsEl.innerHTML = '<span id="operator-placeholder" style="color:var(--text3);font-size:13px">Todos os operadores</span>';
+    return;
+  }
+  tagsEl.innerHTML = checked.map(id => {
+    const op = allOperators.find(o => o.id === id);
+    const name = op ? op.name.split(' ')[0] : id;
+    return '<span onclick="removeOperator(\'' + id + '\',event)" style="display:inline-flex;align-items:center;gap:4px;' +
+      'background:var(--accent);color:#fff;padding:3px 8px;border-radius:999px;font-size:12px;font-weight:500;white-space:nowrap;cursor:pointer">' +
+      name + ' <span style="opacity:0.7;font-size:10px">✕</span></span>';
+  }).join('');
+}
+
+function removeOperator(id, e) {
+  e.stopPropagation();
+  const cb = document.querySelector('#operator-checkboxes input[value="' + id + '"]');
+  if (cb) { cb.checked = false; updateOperatorTags(); }
+}
+
+function getSelectedOperatorIds() {
+  return Array.from(document.querySelectorAll('#operator-checkboxes input[type=checkbox]:checked'))
+    .map(cb => cb.value);
+}
+
+function selectAllOperators(e) {
+  if (e) e.stopPropagation();
+  document.querySelectorAll('#operator-checkboxes input[type=checkbox]').forEach(cb => cb.checked = true);
+  updateOperatorTags();
+}
+
+function clearOperators(e) {
+  if (e) e.stopPropagation();
+  document.querySelectorAll('#operator-checkboxes input[type=checkbox]').forEach(cb => cb.checked = false);
+  updateOperatorTags();
+}
+
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('#operator-dropdown') && !e.target.closest('#operator-list')) {
+    const list = document.getElementById('operator-list');
+    if (list) list.style.display = 'none';
+  }
+});
+
+async function refreshData(clearCache = false) {
+  if (isLoading) return;
+  if (clearCache) {
+    try {
+      await fetch(`/api/refresh?domain=${encodeURIComponent(currentDomain)}`, { method: 'POST' });
+      showToast('🔄 Cache limpo. Buscando dados frescos...');
+    } catch { }
+  }
+  loadData();
+  startAutoRefresh();
+}
+
+async function loadData() {
+  if (isLoading) return;
+  isLoading = true;
+  setLoading(true);
+  hideError();
+
+  const { domain, dateFrom, dateTo, operatorIds } = getFilters();
+  const params = new URLSearchParams({ domain, dateFrom, dateTo });
+  if (operatorIds && operatorIds.length > 0) {
+    operatorIds.forEach(id => params.append('operatorId', id));
+  }
+
+  try {
+    const res = await fetch(`/api/metrics?${params}`);
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+      throw new Error(data.error || 'Erro ao carregar dados.');
+    }
+
+    renderDashboard(data);
+    document.getElementById('tenant-name').textContent = data.tenant?.name || domain;
+    document.getElementById('last-updated').textContent =
+      `Última atualização: ${new Date().toLocaleString('pt-BR')}`;
+  } catch (err) {
+    showError(err.message);
+  } finally {
+    isLoading = false;
+    setLoading(false);
+  }
+}
+
+// ─── Render ───────────────────────────────────────────────────────────────────
+function renderDashboard({ summary, operatorStats, table }) {
+  renderKPIs(summary);
+  renderCharts(operatorStats);
+  renderTable(table);
+}
+
+function renderKPIs(s) {
+  document.getElementById('kpi-total').textContent = s.totalSessions ?? '—';
+  document.getElementById('kpi-closed').textContent = `${s.closedSessions} fechados`;
+  document.getElementById('kpi-open').textContent = `${s.openSessions} abertos`;
+  document.getElementById('kpi-first-response').textContent = s.avgFirstResponseTimeFormatted || '—';
+  document.getElementById('kpi-avg-response').textContent = s.avgResponseTimeFormatted || '—';
+  document.getElementById('kpi-avg-total').textContent = s.avgTotalTimeFormatted || '—';
+}
+
+function renderCharts(operatorStats) {
+  if (!operatorStats || operatorStats.length === 0) return;
+
+  const labels = operatorStats.map(o => o.operatorName.split(' ')[0]); // Primeiro nome
+  const colors = ['#6366f1','#06b6d4','#f59e0b','#22c55e','#ef4444','#a855f7','#ec4899','#14b8a6'];
+
+  const toMin = v => v !== null ? Math.round(v / 60 * 10) / 10 : 0;
+
+  buildBarChart('chart-first-response', labels,
+    operatorStats.map(o => toMin(o.avgFirstResponseTime)),
+    '1ª Resposta (min)', '#06b6d4');
+
+  buildBarChart('chart-total-time', labels,
+    operatorStats.map(o => toMin(o.avgTotalTime)),
+    'Tempo Total (min)', '#22c55e');
+
+  buildBarChart('chart-sessions', labels,
+    operatorStats.map(o => o.totalSessions),
+    'Atendimentos', '#6366f1');
+
+  buildBarChart('chart-avg-response', labels,
+    operatorStats.map(o => toMin(o.avgResponseTime)),
+    'Resp. Média (min)', '#f59e0b');
+}
+
+function buildBarChart(id, labels, data, label, color) {
+  if (charts[id]) charts[id].destroy();
+  const ctx = document.getElementById(id).getContext('2d');
+  charts[id] = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label,
+        data,
+        backgroundColor: color + '99',
+        borderColor: color,
+        borderWidth: 2,
+        borderRadius: 6,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.y}` } }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#64748b', font: { size: 11 } },
+          grid: { color: '#1e293b' }
+        },
+        y: {
+          ticks: { color: '#64748b', font: { size: 11 } },
+          grid: { color: '#1e293b' },
+          beginAtZero: true
+        }
+      }
+    }
+  });
+}
+
+// ─── Paginação da tabela ──────────────────────────────────────────────────────
+let tableAllRows = [];
+let tablePage = 1;
+const TABLE_PAGE_SIZE = 50;
+
+function renderTable(rows) {
+  tableAllRows = rows || [];
+  tablePage = 1;
+  renderTablePage();
+}
+
+function renderTablePage() {
+  const tbody = document.getElementById('table-body');
+  const total = tableAllRows.length;
+  const totalPages = Math.max(1, Math.ceil(total / TABLE_PAGE_SIZE));
+  const start = (tablePage - 1) * TABLE_PAGE_SIZE;
+  const end = Math.min(start + TABLE_PAGE_SIZE, total);
+  const pageRows = tableAllRows.slice(start, end);
+
+  document.getElementById('table-count').textContent =
+    `${total} conversa(s) — página ${tablePage} de ${totalPages}`;
+
+  if (total === 0) {
+    tbody.innerHTML = `<tr><td colspan="10"><div class="empty-state">
+      <div class="empty-state-icon">📭</div>
+      <div class="empty-state-title">Nenhuma conversa encontrada</div>
+      <div class="empty-state-text">Tente ajustar os filtros de data ou operador</div>
+    </div></td></tr>`;
+    renderTablePagination(totalPages);
+    return;
+  }
+
+  tbody.innerHTML = pageRows.map(r => {
+    const statusClass = r.status === 'closed' ? 'status-closed' : 'status-open';
+    const statusLabel = r.status === 'closed' ? 'Encerrado' : 'Em aberto';
+    return `<tr>
+      <td style="color:var(--text3);font-family:monospace">#${r.sessionId}</td>
+      <td style="color:var(--text);font-weight:500">${r.clientName || '—'}</td>
+      <td>${r.operatorName || '—'}</td>
+      <td>${formatDateTime(r.dateCreate)}</td>
+      <td>${r.dateClose ? formatDateTime(r.dateClose) : '<span style="color:var(--text3)">—</span>'}</td>
+      <td><span class="status-badge ${statusClass}">${statusLabel}</span></td>
+      <td style="text-align:center">${r.messageCount ?? '—'}</td>
+      <td class="metric-cell ${metricColor(r.firstResponseTime, 120, 300)}">${r.firstResponseTimeFormatted}</td>
+      <td class="metric-cell ${metricColor(r.avgResponseTime, 180, 600)}">${r.avgResponseTimeFormatted}</td>
+      <td class="metric-cell ${metricColor(r.totalTime, 600, 1800)}">${r.totalTimeFormatted}</td>
+    </tr>`;
+  }).join('');
+
+  renderTablePagination(totalPages);
+}
+
+function renderTablePagination(totalPages) {
+  let el = document.getElementById('table-pagination');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'table-pagination';
+    el.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:8px;padding:16px;border-top:1px solid var(--border)';
+    document.querySelector('.table-card').appendChild(el);
+  }
+
+  if (totalPages <= 1) { el.innerHTML = ''; return; }
+
+  const btn = (label, page, disabled, active) =>
+    `<button onclick="goTablePage(${page})"
+      style="padding:6px 12px;border:1px solid ${active ? 'var(--accent)' : 'var(--border)'};
+      background:${active ? 'var(--accent)' : 'var(--surface2)'};color:${active ? '#fff' : 'var(--text2)'};
+      border-radius:6px;font-size:12px;cursor:${disabled ? 'not-allowed' : 'pointer'};opacity:${disabled ? '0.4' : '1'}"
+      ${disabled ? 'disabled' : ''}>${label}</button>`;
+
+  let pages = '';
+  // Mostra até 7 páginas ao redor da atual
+  const range = 3;
+  for (let i = 1; i <= totalPages; i++) {
+    if (i === 1 || i === totalPages || (i >= tablePage - range && i <= tablePage + range)) {
+      pages += btn(i, i, false, i === tablePage);
+    } else if (i === tablePage - range - 1 || i === tablePage + range + 1) {
+      pages += `<span style="color:var(--text3)">…</span>`;
+    }
+  }
+
+  el.innerHTML =
+    btn('‹ Anterior', tablePage - 1, tablePage === 1, false) +
+    pages +
+    btn('Próxima ›', tablePage + 1, tablePage === totalPages, false);
+}
+
+function goTablePage(page) {
+  const totalPages = Math.ceil(tableAllRows.length / TABLE_PAGE_SIZE);
+  if (page < 1 || page > totalPages) return;
+  tablePage = page;
+  renderTablePage();
+  document.querySelector('.table-card').scrollIntoView({ behavior: 'smooth' });
+}
+
+// Cor baseada em thresholds (bom/aviso/ruim)
+function metricColor(seconds, warnAt, badAt) {
+  if (seconds === null || seconds === undefined) return 'metric-na';
+  if (seconds <= warnAt) return 'metric-good';
+  if (seconds <= badAt) return 'metric-warn';
+  return 'metric-bad';
+}
+
+function formatDateTime(iso) {
+  if (!iso) return '—';
+  try {
+    return new Date(iso).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit', hour:'2-digit', minute:'2-digit' });
+  } catch { return iso; }
+}
+
+// ─── Configurações de Horário Comercial ───────────────────────────────────────
+let currentBH = { start: 9, end: 18, days: [1,2,3,4,5] };
+
+async function loadSettings() {
+  if (!currentDomain) return;
+  try {
+    const res = await fetch(`/api/settings?domain=${encodeURIComponent(currentDomain)}`);
+    const data = await res.json();
+    if (data.success && data.businessHours) {
+      currentBH = data.businessHours;
+    }
+  } catch {}
+}
+
+function openSettings() {
+  const modal = document.getElementById('modal-settings');
+  modal.style.display = 'flex';
+
+  // Preenche campos com valores atuais
+  document.getElementById('bh-start').value = currentBH.start;
+  document.getElementById('bh-end').value = currentBH.end;
+
+  // Marca dias
+  for (let i = 0; i <= 6; i++) {
+    const cb = document.getElementById(`bh-day-${i}`);
+    const label = document.getElementById(`day-label-${i}`);
+    const active = currentBH.days.includes(i);
+    cb.checked = active;
+    label.style.background = active ? 'var(--accent)' : 'var(--surface2)';
+    label.style.borderColor = active ? 'var(--accent)' : 'var(--border)';
+    label.style.color = active ? '#fff' : 'var(--text2)';
+  }
+
+  updateBHPreview();
+
+  // Bind nos dias
+  for (let i = 0; i <= 6; i++) {
+    document.getElementById(`day-label-${i}`).onclick = () => {
+      const cb = document.getElementById(`bh-day-${i}`);
+      cb.checked = !cb.checked;
+      const label = document.getElementById(`day-label-${i}`);
+      label.style.background = cb.checked ? 'var(--accent)' : 'var(--surface2)';
+      label.style.borderColor = cb.checked ? 'var(--accent)' : 'var(--border)';
+      label.style.color = cb.checked ? '#fff' : 'var(--text2)';
+      updateBHPreview();
+    };
+  }
+
+  document.getElementById('bh-start').oninput = updateBHPreview;
+  document.getElementById('bh-end').oninput = updateBHPreview;
+}
+
+function closeSettings() {
+  document.getElementById('modal-settings').style.display = 'none';
+}
+
+function updateBHPreview() {
+  const start = document.getElementById('bh-start').value;
+  const end   = document.getElementById('bh-end').value;
+  const dayNames = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const days = [];
+  for (let i = 0; i <= 6; i++) {
+    if (document.getElementById(`bh-day-${i}`)?.checked) days.push(dayNames[i]);
+  }
+  document.getElementById('bh-preview').textContent =
+    `Expediente: ${start}h às ${end}h | Dias: ${days.length > 0 ? days.join(', ') : 'Nenhum selecionado'}`;
+}
+
+async function saveSettings() {
+  const start = Number(document.getElementById('bh-start').value);
+  const end   = Number(document.getElementById('bh-end').value);
+  const days  = [];
+  for (let i = 0; i <= 6; i++) {
+    if (document.getElementById(`bh-day-${i}`)?.checked) days.push(i);
+  }
+
+  if (start >= end) return showToast('⚠️ Horário de início deve ser menor que o fim.');
+  if (days.length === 0) return showToast('⚠️ Selecione ao menos um dia.');
+
+  const btn = document.getElementById('btn-save-settings');
+  btn.disabled = true;
+  btn.textContent = 'Salvando...';
+
+  try {
+    const res = await fetch(`/api/settings?domain=${encodeURIComponent(currentDomain)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ start, end, days })
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error);
+
+    currentBH = { start, end, days };
+    closeSettings();
+    showToast('✅ Configurações salvas! Recalculando métricas...');
+    loadData();
+  } catch (err) {
+    showToast('⚠️ Erro ao salvar: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Salvar e recalcular';
+  }
+}
+
+// Fecha modal clicando fora
+document.getElementById('modal-settings').addEventListener('click', function(e) {
+  if (e.target === this) closeSettings();
+});
+function setLoading(show) {
+  document.getElementById('loading').classList.toggle('show', show);
+  const btn = document.getElementById('btn-refresh');
+  const spinner = document.getElementById('btn-spinner');
+  btn.disabled = show;
+  spinner.style.display = show ? 'block' : 'none';
+  document.getElementById('refresh-dot').classList.toggle('paused', show);
+}
+
+function showToast(msg, duration = 3000) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), duration);
+}
+
+function showError(msg) {
+  const el = document.getElementById('error-banner');
+  el.textContent = '⚠️ ' + msg;
+  el.style.display = 'block';
+}
+
+function hideError() {
+  document.getElementById('error-banner').style.display = 'none';
+}
+</script>
+
+<!-- BX24.js — SDK oficial do Bitrix24 (carregado quando rodando no iframe) -->
+<script>
+(function() {
+  // Tenta carregar o BX24.js do portal pai (apenas quando dentro do iframe)
+  try {
+    if (window.self !== window.top) {
+      const script = document.createElement('script');
+      script.src = '/bitrix/js/api.js'; // Path padrão do BX24 SDK
+      script.onerror = () => {}; // Silencia erro se não estiver no Bitrix
+      document.head.appendChild(script);
+    }
+  } catch {}
+})();
+</script>
+</body>
+</html>
