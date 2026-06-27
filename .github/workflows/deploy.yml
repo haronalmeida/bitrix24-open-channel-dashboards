@@ -1,0 +1,44 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+      - homolog
+
+jobs:
+  deploy-homolog:
+    if: github.ref_name == 'homolog'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy em HOMOLOGACAO
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
+          timeout: 60s
+          script: |
+            cd /opt/bitrix24-dashboard-homolog
+            git pull origin homolog
+            npm install --production
+            pm2 restart 3
+
+  deploy-prod:
+    if: github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy em PRODUCAO
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: 22
+          timeout: 60s
+          script: |
+            cd /opt/bitrix24-dashboard
+            git pull origin main
+            npm install --production
+            pm2 restart 2
