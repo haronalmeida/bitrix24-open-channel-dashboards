@@ -7,27 +7,34 @@ on:
       - homolog
 
 jobs:
-  deploy:
+  deploy-homolog:
+    if: github.ref_name == 'homolog'
     runs-on: ubuntu-latest
-
     steps:
-      - name: Deploy para VPS
+      - name: Deploy em HOMOLOGACAO
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           script: |
-            if [ "${{ github.ref_name }}" = "main" ]; then
-              echo "Deploy em PRODUÇÃO..."
-              cd /opt/bitrix24-dashboard
-              git pull origin main
-              npm install --production
-              pm2 restart 2
-            else
-              echo "Deploy em HOMOLOGAÇÃO..."
-              cd /opt/bitrix24-dashboard-homolog
-              git pull origin homolog
-              npm install --production
-              pm2 restart 3
-            fi
+            cd /opt/bitrix24-dashboard-homolog
+            git pull origin homolog
+            npm install --production
+            pm2 restart 3
+
+  deploy-prod:
+    if: github.ref_name == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy em PRODUCAO
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            cd /opt/bitrix24-dashboard
+            git pull origin main
+            npm install --production
+            pm2 restart 2
